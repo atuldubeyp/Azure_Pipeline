@@ -1,0 +1,319 @@
+{
+    "name": "Master_Welearn_Pipeline_Prod_API",
+    "properties": {
+        "activities": [
+            {
+                "name": "If Condition1",
+                "type": "IfCondition",
+                "dependsOn": [
+                    {
+                        "activity": "InActiveHistoryChecks",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "userProperties": [],
+                "typeProperties": {
+                    "expression": {
+                        "value": "@lessOrEquals(activity('InActiveHistoryChecks').output.firstRow.CountDiff,activity('ThresoldCount').output.firstRow.recordcount)",
+                        "type": "Expression"
+                    },
+                    "ifFalseActivities": [
+                        {
+                            "name": "Execute Pipeline2",
+                            "type": "ExecutePipeline",
+                            "dependsOn": [],
+                            "userProperties": [],
+                            "typeProperties": {
+                                "pipeline": {
+                                    "referenceName": "DAAP_Failure_Email_Alert",
+                                    "type": "PipelineReference"
+                                },
+                                "waitOnCompletion": true,
+                                "parameters": {
+                        
+                                    "Activity": "Threshold Logic Check",
+                                    "ErrorMessage": "WeLearn Pipeline did not run because deactivated users were more than the Threshold count(300) in the source data",
+                                    "Pipeline": "Master_Welearn_Pipeline_Prod_API"
+                                }
+                            }
+                        }
+                    ],
+                    "ifTrueActivities": [
+                        {
+                            "name": "Source_DataPreparation_SP",
+                            "type": "SqlPoolStoredProcedure",
+                            "dependsOn": [],
+                            "policy": {
+                                "timeout": "7.00:00:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "sqlPool": {
+                                "referenceName": "Analytics",
+                                "type": "SqlPoolReference"
+                            },
+                            "typeProperties": {
+                                "storedProcedureName": "[EDW].[WeLearnLMIDataPreperation]"
+                            }
+                        },
+                        {
+                            "name": "Execute Pipeline1",
+                            "type": "ExecutePipeline",
+                            "dependsOn": [
+                                {
+                                    "activity": "Source_DataPreparation_SP",
+                                    "dependencyConditions": [
+                                        "Succeeded"
+                                    ]
+                                }
+                            ],
+                            "userProperties": [],
+                            "typeProperties": {
+                                "pipeline": {
+                                    "referenceName": "Welearn_SQLPool_SFTP_Prod_API",
+                                    "type": "PipelineReference"
+                                },
+                                "waitOnCompletion": true,
+                                "parameters": {
+                                    "FileType": "user",
+                                    "DeltaFlag": false,
+                                    "FileType2": "attributes"
+                                }
+                            }
+                        },
+                        {
+                            "name": "Source_DataPreparation_SP EmailAlert",
+                            "type": "ExecutePipeline",
+                            "dependsOn": [
+                                {
+                                    "activity": "Source_DataPreparation_SP",
+                                    "dependencyConditions": [
+                                        "Failed"
+                                    ]
+                                }
+                            ],
+                            "userProperties": [],
+                            "typeProperties": {
+                                "pipeline": {
+                                    "referenceName": "DAAP_Failure_Email_Alert",
+                                    "type": "PipelineReference"
+                                },
+                                "waitOnCompletion": true,
+                                "parameters": {
+                                    "EmailTo": "",
+                                    "Activity": "Source_DataPreparation_SP",
+                                    "ErrorMessage": {
+                                        "value": "@activity('Source_DataPreparation_SP').Error.message",
+                                        "type": "Expression"
+                                    },
+                                    "Pipeline": {
+                                        "value": "@pipeline().Pipeline",
+                                        "type": "Expression"
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                "name": "InActiveHistoryChecks",
+                "type": "Lookup",
+                "dependsOn": [
+                    {
+                        "activity": "ThresoldCount",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "source": {
+                        "type": "SqlPoolSource",
+                        "sqlReaderStoredProcedureName": "[EDW].[sp_WeLearnInActiveHistory]",
+                        "queryTimeout": "02:00:00"
+                    },
+                    "dataset": {
+                        "referenceName": "WeLearnSqlPool",
+                        "type": "DatasetReference"
+                    }
+                }
+            },
+            {
+                "name": "ThresoldCount",
+                "type": "Lookup",
+                "dependsOn": [
+                    {
+                        "activity": "WeLearDataPreperationStg_SP",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "source": {
+                        "type": "SqlPoolSource",
+                        "sqlReaderQuery": {
+                            "value": "@concat('select recordcount from [EDW].[WeLearnThresoldCount]')",
+                            "type": "Expression"
+                        },
+                        "queryTimeout": "02:00:00"
+                    },
+                    "dataset": {
+                        "referenceName": "WeLearnSqlPool",
+                        "type": "DatasetReference"
+                    }
+                }
+            },
+            {
+                "name": "WeLearDataPreperationStg_SP",
+                "type": "SqlPoolStoredProcedure",
+                "dependsOn": [],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "sqlPool": {
+                    "referenceName": "Analytics",
+                    "type": "SqlPoolReference"
+                },
+                "typeProperties": {
+                    "storedProcedureName": "[EDW].[WeLearnLMIDataPreperation_stg]"
+                }
+            },
+            {
+                "name": "WeLearDataPreperationStg_SP EmailAlert",
+                "type": "ExecutePipeline",
+                "dependsOn": [
+                    {
+                        "activity": "WeLearDataPreperationStg_SP",
+                        "dependencyConditions": [
+                            "Failed"
+                        ]
+                    }
+                ],
+                "userProperties": [],
+                "typeProperties": {
+                    "pipeline": {
+                        "referenceName": "DAAP_Failure_Email_Alert",
+                        "type": "PipelineReference"
+                    },
+                    "waitOnCompletion": true,
+                    "parameters": {
+                        "EmailTo": "",
+                        "Activity": "WeLearDataPreperationStg_SP",
+                        "ErrorMessage": {
+                            "value": "@activity('WeLearDataPreperationStg_SP').Error.message",
+                            "type": "Expression"
+                        },
+                        "Pipeline": {
+                            "value": "@pipeline().Pipeline",
+                            "type": "Expression"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "ThresoldCount Email Alert",
+                "type": "ExecutePipeline",
+                "dependsOn": [
+                    {
+                        "activity": "ThresoldCount",
+                        "dependencyConditions": [
+                            "Failed"
+                        ]
+                    }
+                ],
+                "userProperties": [],
+                "typeProperties": {
+                    "pipeline": {
+                        "referenceName": "DAAP_Failure_Email_Alert",
+                        "type": "PipelineReference"
+                    },
+                    "waitOnCompletion": true,
+                    "parameters": {
+                        "EmailTo": "",
+                        "Activity": "ThresoldCount",
+                        "ErrorMessage": {
+                            "value": "@activity('ThresoldCount').Error.message",
+                            "type": "Expression"
+                        },
+                        "Pipeline": {
+                            "value": "@pipeline().Pipeline",
+                            "type": "Expression"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "InActiveHistoryChecks Email Alert",
+                "type": "ExecutePipeline",
+                "dependsOn": [
+                    {
+                        "activity": "InActiveHistoryChecks",
+                        "dependencyConditions": [
+                            "Failed"
+                        ]
+                    }
+                ],
+                "userProperties": [],
+                "typeProperties": {
+                    "pipeline": {
+                        "referenceName": "DAAP_Failure_Email_Alert",
+                        "type": "PipelineReference"
+                    },
+                    "waitOnCompletion": true,
+                    "parameters": {
+                        "EmailTo": "",
+                        "Activity": "InActiveHistoryChecks",
+                        "ErrorMessage": {
+                            "value": "@activity('InActiveHistoryChecks').Error.message",
+                            "type": "Expression"
+                        },
+                        "Pipeline": {
+                            "value": "@pipeline().Pipeline",
+                            "type": "Expression"
+                        }
+                    }
+                }
+            }
+        ],
+        "variables": {
+            "Inventory": {
+                "type": "String"
+            },
+            "Thresold": {
+                "type": "String"
+            }
+        },
+        "folder": {
+            "name": "Live/Welearn"
+        },
+        "annotations": []
+    }
+}
